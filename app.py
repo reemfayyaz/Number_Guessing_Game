@@ -14,6 +14,17 @@ st.set_page_config(
 
 
 # ---------------------------------------------------------
+# Difficulty ranges
+# ---------------------------------------------------------
+DIFFICULTY_RANGES = {
+    "Easy (1-10)": (1, 10),
+    "Medium (11-50)": (11, 50),
+    "Hard (51-100)": (51, 100),
+}
+DEFAULT_DIFFICULTY = "Easy (1-10)"
+
+
+# ---------------------------------------------------------
 # Custom styling
 # ---------------------------------------------------------
 st.markdown(
@@ -67,16 +78,26 @@ st.markdown(
 # Game state
 # ---------------------------------------------------------
 def start_new_game() -> None:
-    """Reset all values and generate a new secret number."""
-    st.session_state.secret_number = random.randint(1, 10)
+    """Reset all values and generate a new secret number based on the selected difficulty."""
+    # Ensure difficulty is present
+    if "difficulty" not in st.session_state:
+        st.session_state.difficulty = DEFAULT_DIFFICULTY
+
+    min_val, max_val = DIFFICULTY_RANGES[st.session_state.difficulty]
+    st.session_state.min_val = min_val
+    st.session_state.max_val = max_val
+    st.session_state.secret_number = random.randint(min_val, max_val)
     st.session_state.attempts = 0
-    st.session_state.message = "Enter a number and press **Submit Guess**."
+    st.session_state.message = f"Enter a number between {min_val} and {max_val} and press **Submit Guess**."
     st.session_state.message_type = "info"
     st.session_state.game_over = False
     st.session_state.guess_history = []
 
 
 if "secret_number" not in st.session_state:
+    # Initialize difficulty if not set
+    if "difficulty" not in st.session_state:
+        st.session_state.difficulty = DEFAULT_DIFFICULTY
     start_new_game()
 
 
@@ -87,10 +108,23 @@ st.markdown(
     """
     <div class="game-header">
         <h1>🎯 Number Guessing Game</h1>
-        <p>Can you guess the secret number between 1 and 10?</p>
+        <p>Can you guess the secret number? Choose a difficulty and try to beat it!</p>
     </div>
     """,
     unsafe_allow_html=True,
+)
+
+
+# ---------------------------------------------------------
+# Difficulty selector (resets game when changed)
+# ---------------------------------------------------------
+st.selectbox(
+    "Difficulty",
+    options=list(DIFFICULTY_RANGES.keys()),
+    index=list(DIFFICULTY_RANGES.keys()).index(st.session_state.difficulty),
+    key="difficulty",
+    on_change=start_new_game,
+    help="Choose a difficulty level. The game will restart when you change difficulty.",
 )
 
 
@@ -103,21 +137,22 @@ with metric_1:
     st.metric("Attempts", st.session_state.attempts)
 
 with metric_2:
-    st.metric("Possible Range", "1 – 10")
+    st.metric("Possible Range", f"{st.session_state.min_val} – {st.session_state.max_val} ({st.session_state.difficulty.split()[0]})")
 
 
 # ---------------------------------------------------------
 # Guess form
 # ---------------------------------------------------------
 with st.form("guess_form", clear_on_submit=False):
+    default_guess = (st.session_state.min_val + st.session_state.max_val) // 2
     guess = st.number_input(
         "Your guess",
-        min_value=1,
-        max_value=10,
-        value=5,
+        min_value=st.session_state.min_val,
+        max_value=st.session_state.max_val,
+        value=default_guess,
         step=1,
         disabled=st.session_state.game_over,
-        help="Choose a whole number from 1 to 10.",
+        help=f"Choose a whole number from {st.session_state.min_val} to {st.session_state.max_val}.",
     )
 
     submitted = st.form_submit_button(
@@ -135,17 +170,28 @@ if submitted:
     if guess == st.session_state.secret_number:
         st.session_state.message = (
             f"🎉 Correct! The secret number was **{st.session_state.secret_number}**. "
-            f"You guessed it in **{st.session_state.attempts} attempt(s)**."
+            f"You guessed it in **{st.session_state.attempts} attempt(s)** on {st.session_state.difficulty} difficulty."
         )
         st.session_state.message_type = "success"
         st.session_state.game_over = True
 
     elif guess < st.session_state.secret_number:
-        st.session_state.message = "📉 Too low. Try a higher number."
+        # Provide relative hint depending on range size
+        diff = st.session_state.secret_number - guess
+        if diff <= max(1, (st.session_state.max_val - st.session_state.min_val) // 10):
+            hint = "You're very close — try a slightly higher number."
+        else:
+            hint = "Too low. Try a higher number."
+        st.session_state.message = f"📉 {hint}"
         st.session_state.message_type = "warning"
 
     else:
-        st.session_state.message = "📈 Too high. Try a lower number."
+        diff = guess - st.session_state.secret_number
+        if diff <= max(1, (st.session_state.max_val - st.session_state.min_val) // 10):
+            hint = "You're very close — try a slightly lower number."
+        else:
+            hint = "Too high. Try a lower number."
+        st.session_state.message = f"📈 {hint}"
         st.session_state.message_type = "warning"
 
     st.rerun()
